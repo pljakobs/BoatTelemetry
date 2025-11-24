@@ -1,0 +1,13 @@
+[Unit]
+Description=MQTT to InfluxDB Service
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/root
+ExecStart=/usr/bin/python3 /root/mqtt_to_influx.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
