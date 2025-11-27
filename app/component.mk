@@ -1,3 +1,5 @@
-COMPONENT_SRCS := application.cpp telemetry.cpp
+# Sming component makefile for the main application
 
-COMPONENT_DEPENDS += DS18S20 Network
+NAME := App
+
+$(NAME)_SOURCES := application.cpp telemetry.cpp

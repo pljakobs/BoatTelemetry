@@ -3,6 +3,9 @@
 #include <vector>
 #include <algorithm>
 #include <ArduinoJson.h>
+#include <fstream>
+#include <sstream>
+#include <map>
 
 #include <SmingCore.h>
 #include <Libraries/OneWire/OneWire.h>
@@ -14,7 +17,9 @@
 #include "driver/rtc_io.h"
 
 #include <Adafruit_Sensor.h>
-#include <Adafruit_ADXL345_U.h>
+//#include <Adafruit_ADXL345_U.h>
+#include <Wire.h>
+#include <Adafruit_MPU6050.h>
 
 #define ONE_WIRE_BUS 6 // GPIO6 for ESP32-C3
 #define TEMPERATURE_PRECISION 9
@@ -24,15 +29,12 @@
 
 #define BUFFER_SIZE 2000
 
-#ifndef WIFI_SSID
-#define WIFI_SSID "Antares"
-#define WIFI_PWD "meinwlangehoertmir"
-#endif
 
 TelemetryClient* telemetryClient = nullptr;
 
 
-Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(12345);
+Adafruit_MPU6050 mpu;
+sensors_event_t accelEvent, gyroEvent, tempEvent;
 
 // Setup a oneWire instance to communicate with any OneWire devices
 OneWire oneWire(ONE_WIRE_BUS);
@@ -45,7 +47,7 @@ SimpleTimer accelTimer;
 
 // Global variables
 float normalX_global = 0, normalY_global = 0, normalZ_global = 0;
-std::vector<std::array<float, 4>> accelBuffer;  // Buffer for {timestamp, x, y, z} objects
+std::vector<std::array<float, 7>> accelBuffer;  // Buffer for {timestamp, x, y, z} objects
 
 
 // Calculate horizontal acceleration magnitude from X and Y axes
@@ -80,11 +82,11 @@ std::vector<std::array<float, 4>> accelBuffer;  // Buffer for {timestamp, x, y, 
 
 void calibrateNormalVector(int samples = 500, int delayMs = 20) {
     Serial.println("Calibrating normal vector... Keep sensor still!");
-    
+    /*
     std::vector<float> xVals, yVals, zVals;
     for (int i = 0; i < samples; ++i) {
         sensors_event_t event;
-        if (accel.getEvent(&event)) {
+        if (mpu.getEvent(&event)) {
             xVals.push_back(event.acceleration.x);
             yVals.push_back(event.acceleration.y);
             zVals.push_back(event.acceleration.z);
@@ -100,6 +102,7 @@ void calibrateNormalVector(int samples = 500, int delayMs = 20) {
     float magnitude = sqrtf(normalX_global * normalX_global + normalY_global * normalY_global + normalZ_global * normalZ_global);
     
     Serial.printf("Normal Vector: (%.2f, %.2f, %.2f) m/s² | Magnitude: %.2f\n", normalX_global, normalY_global, normalZ_global, magnitude);
+    */
 }
 
 void printAddress(DeviceAddress deviceAddress)
@@ -128,30 +131,6 @@ void printData(DeviceAddress deviceAddress)
     Serial.print(" ");
     printTemperature(deviceAddress);
     Serial.println();
-}
-
-void readAccelDataRaw() {
-    // Read raw data from ADXL345 (assumes I2C is set up)
-    Wire.beginTransmission(0x53);
-    Wire.write(0x32);  // DATAX0 register
-    Wire.endTransmission(false);
-    Wire.requestFrom(0x53, 6);
-    
-    if (Wire.available() == 6) {
-        int16_t xRaw = Wire.read() | (Wire.read() << 8);
-        int16_t yRaw = Wire.read() | (Wire.read() << 8);
-        int16_t zRaw = Wire.read() | (Wire.read() << 8);
-        
-        // Manual scaling for 2G range: 256 LSB/G * 9.81 m/s²/G
-        float scale = (1.0f / 256.0f) * 9.81f;  // 0.0383 m/s² per LSB
-        float x = xRaw * scale;
-        float y = yRaw * scale;
-        float z = zRaw * scale;
-        
-        Serial.printf("Raw: X=%d Y=%d Z=%d | Scaled: X=%.2f Y=%.2f Z=%.2f\n", xRaw, yRaw, zRaw, x, y, z);
-    } else {
-        Serial.println("Failed to read raw data");
-    }
 }
 
 float calcVariance(const std::vector<float>& buffer) {
@@ -183,33 +162,70 @@ float calcVariance(const std::vector<float>& buffer) {
     return avgSamples / sampleRate;
 }
 
-void readAccelData()
-{
+// Replace ADXL345 initialization with MPU6050 initialization
+void setupMPU6050() {
+    Wire.begin(SDA_PIN, SCL_PIN);
+
+    if (!mpu.begin(MPU6050_I2CADDR_DEFAULT, &Wire, 0)) {
+        Serial.println("Failed to find MPU6050 chip");
+        while (1) {
+            delay(10);
+        }
+    }
+}
+
+void readDataMPU6050() {
     static int sampleCounter = 0;
     sampleCounter++;
-    
-    sensors_event_t event;
-    if (!accel.getEvent(&event)) return;
-    
-    // Collect raw data as {timestamp, x, y, z} object
+
+    int16_t ax, ay, az;
+    sensors_event_t accel;
+    sensors_event_t gyro;
+    sensors_event_t temp;
+    mpu.getEvent(&accelEvent, &gyroEvent, &tempEvent);
+
+    float x = accelEvent.acceleration.x;
+    float y = accelEvent.acceleration.y;
+    float z = accelEvent.acceleration.z;
+
+    float pitch = gyroEvent.gyro.y;
+    float roll = gyroEvent.gyro.x;
+    float yaw = gyroEvent.gyro.z;
+
+    float tempC = tempEvent.temperature;
+
+    //Serial.printf("Temperature: %.2f deg C\n", tempC);
+
+    /* Display the results (acceleration is measured in m/s^2) */
+    /* 
+    Serial.printf("\t| accel\t| rota\t|\n");
+    Serial.printf("x:\t%.2f\t|\t %.2f|t|\n", x,pitch);
+    Serial.printf("y:\t%.2f\t|\t %.2f|t|\n", y,roll);
+    Serial.printf("z:\t%.2f\t|\t %.2f|t|\n", z,yaw);
+    Serial.println();
+    */
+   // Collect raw data as {timestamp, x, y, z} object
     float timestamp = millis() / 1000.0f;  // Convert milliseconds to seconds
-    accelBuffer.push_back({timestamp, event.acceleration.x, event.acceleration.y, event.acceleration.z});
+    accelBuffer.push_back({timestamp, x, y, z, pitch, roll, yaw});
 
     // Every second (50 samples at 20ms), publish to MQTT
     if (sampleCounter >= 50) {
         StaticJsonDocument<4096> doc;  // Adjust size as needed
         JsonArray dataArray = doc.createNestedArray("data");
-        
+
         for (const auto& point : accelBuffer) {
             JsonObject obj = dataArray.createNestedObject();
             obj["timestamp"] = point[0];  // Add timestamp
             obj["x"] = point[1];
             obj["y"] = point[2];
             obj["z"] = point[3];
+            obj["pitch"] = point[4];
+            obj["roll"] = point[5];
+            obj["yaw"] = point[6];
         }
-        
+
         telemetryClient->publish("accel", doc);
-        
+
         // Clear buffer
         accelBuffer.clear();
         sampleCounter = 0;
@@ -252,7 +268,7 @@ void readData()
     }
 }
 
-
+// Update init function to use environment variables for credentials
 void init() {
     #ifdef UART_ID_SERIAL_USB_JTAG
         Serial.setPort(UART_ID_SERIAL_USB_JTAG);
@@ -269,7 +285,7 @@ void init() {
     const char* mqttUser = MQTT_USER;
     const char* mqttPass = MQTT_PASS;
 
-    Serial.println("Initializing WiFi...");
+    Serial.printf("Initializing WiFi...\n\tSSID: %s\n\tPassword: %s", wifiSSID, wifiPassword);
     WifiStation.enable(true);
     WifiStation.config(wifiSSID, wifiPassword);
 
@@ -277,13 +293,17 @@ void init() {
         Serial.printf("WiFi connected! IP: %s\n", ip.toString().c_str());
 
         // Initialize telemetry client
+        Serial.printf("Connecting to MQTT server %s with user %s and password %s...\n", mqttServer, mqttUser, mqttPass);
         telemetryClient = new TelemetryClient(mqttServer, mqttUser, mqttPass, APP_ID);
         telemetryClient->start();
         Serial.println("Telemetry client started");
 
+        // Initialize MPU6050
+        setupMPU6050();
+
         // Start timers
         procTimer.initializeMs<10000>(readData).start();
-        accelTimer.initializeMs<20>(readAccelData).start();
+        accelTimer.initializeMs<20>(readDataMPU6050).start();
     });
 
     WifiEvents.onStationDisconnect([](const String& ssid, MacAddress bssid, WifiDisconnectReason reason) {

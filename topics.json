@@ -1,0 +1,39 @@
+{
+    "environments": {
+        "boat": {
+            "locations": {
+                "Salon": {
+                    "sensors": {
+                        "antares/3960722352/28ee28d500160298": {
+                            "measurement": "temperature"
+                        },
+                        "antares/3960722352/28ee2d1d01160126": {
+                            "measurement": "temperature"
+                        },
+                        "antares/3960722352/accel": {
+                            "measurement": "acceleration"
+                        }
+                    }
+                },
+                "Motor": {
+                    "sensors": {
+                        "antares/3960722352/28ee28d500160298": {
+                            "measurement": "temperature"
+                        }
+                    }
+                }
+            }
+        },
+        "remote": {
+            "locations": {
+                "Lab": {
+                    "sensors": {
+                        "REMOTE_SENSORS/1889783984/accel": {
+                            "measurement": "acceleration"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

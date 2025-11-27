@@ -4,6 +4,10 @@ ifneq ("$(wildcard $(PROJECT_DIR)/credentials.txt)","")
     include $(PROJECT_DIR)/credentials.txt
 endif
 
+ifneq ("$(wildcard $(PROJECT_DIR)/Adafruit_MPU6050.patch)","")
+    $(shell patch -d $(PROJECT_DIR)/Libraries/Adafruit_MPU6050 -p1 < $(PROJECT_DIR)/Adafruit_MPU6050.patch)
+endif
+
 APP_ID ?= "REMOTE_SENSORS"
 MQTT_URL ?= "mqtt://lightinator.de:1883"
 MQTT_USER ?= "default_user"
@@ -13,7 +17,8 @@ WIFI_PWD ?= "default_password"
 
 COMPONENT_SEARCH_DIRS += $(PROJECT_DIR)/Libraries
 LIBRARY_SEARCH_DIRS += $(PROJECT_DIR)/Libraries
-ARDUINO_LIBRARIES := Arduino-Temperature-Control-Library OneWire Adafruit_ADXL345 Adafruit_BusIO Adafruit_Sensor
+ARDUINO_LIBRARIES := Arduino-Temperature-Control-Library OneWire Adafruit_BusIO Adafruit_Sensor
+ARDUINO_LIBRARIES := Arduino-Temperature-Control-Library OneWire Adafruit_Sensor Adafruit_BusIO Adafruit_MPU6050
 #ARDUINO_LIBRARIES := Arduino-Temperature-Control-Library OneWire
 COMPONENT_DEPENDS += LittleFS ArduinoJson6 Network OtaUpgradeMqtt
 COMPONENT_CPPFLAGS += -DCONFIG_ESP_CONSOLE_USB_CDC=1

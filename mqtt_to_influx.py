@@ -10,12 +10,10 @@ def load_credentials(file_path):
     credentials = {}
     with open(file_path, "r") as f:
         for line in f:
-            # Ignore empty lines and comments
             if line.strip() and not line.startswith("#"):
-                # Remove "export" if it exists, then split into key-value
                 line = line.replace("export ", "", 1)
                 key, value = line.split("=", 1)
-                credentials[key.strip()] = value.strip().strip('"')  # Remove quotes if present
+                credentials[key.strip()] = value.strip().strip('"')
     return credentials
 
 # Load credentials
@@ -30,12 +28,22 @@ INFLUXDB_BUCKET = credentials.get("INFLUXDB_BUCKET")
 INFLUXDB_TOKEN = credentials.get("INFLUXDB_TOKEN")
 INFLUXDB_ORG = credentials.get("INFLUXDB_ORG")
 
-# MQTT topics to subscribe to
-TOPICS = {
-    "antares/3960722352/28ee2d1d01160126": {"measurement": "temperature", "location": "Salon"},
-    "antares/3960722352/28ee28d500160298": {"measurement": "temperature", "location": "Motor"},
-    "antares/3960722352/accel": {"measurement": "acceleration"}
-}
+# Load topics configuration from topics.json
+with open("topics.json", "r") as f:
+    TOPICS_CONFIG = json.load(f)
+
+# Flatten topics for subscription
+TOPICS = {}
+for env, env_data in TOPICS_CONFIG["environments"].items():
+    for loc, loc_data in env_data["locations"].items():
+        for topic, sensor_data in loc_data["sensors"].items():
+            TOPICS[topic] = {
+                "measurement": sensor_data["measurement"],
+                "tags": {
+                    "environment": env,
+                    "location": loc
+                }
+            }
 
 # Initialize InfluxDB client
 influx_client = InfluxDBClient(
@@ -68,7 +76,6 @@ def on_connect(client, userdata, flags, rc):
     else:
         print(f"Failed to connect, return code {rc}")
 
-# Updated on_message function to calculate timestamps relative to the first measurement in each packet
 def on_message(client, userdata, msg):
     try:
         topic = msg.topic
@@ -78,39 +85,37 @@ def on_message(client, userdata, msg):
         if topic in TOPICS:
             topic_config = TOPICS[topic]
             measurement = topic_config["measurement"]
+            tags = topic_config["tags"]
 
-            if measurement == "temperature":
-                location = topic_config["location"]
-                try:
-                    temperature = float(payload)
-                    write_to_influx(measurement, {"location": location}, {"value": temperature})
-                except ValueError:
-                    print(f"Invalid temperature value: {payload}")
-
-            elif measurement == "acceleration":
+            if measurement == "acceleration":
                 try:
                     accel_data = json.loads(payload)
                     if "data" in accel_data and len(accel_data["data"]) > 0:
-                        # Get the current time as the base time in nanoseconds
                         current_time_ns = int(time.time() * 1e9)
-
-                        # Use the timestamp of the first measurement as t0
                         t0 = accel_data["data"][0]["timestamp"]
 
                         for entry in accel_data["data"]:
                             relative_time_ns = int((entry["timestamp"] - t0) * 1e9)
                             influx_timestamp = current_time_ns + relative_time_ns
 
-                            x = entry["x"]
-                            y = entry["y"]
-                            z = entry["z"]
+                            x = float(entry.get("x", 0))
+                            y = float(entry.get("y", 0))
+                            z = float(entry.get("z", 0))
+                            pitch = float(entry.get("pitch", 0))
+                            roll = float(entry.get("roll", 0))
+                            yaw = float(entry.get("yaw", 0))
 
-                            write_to_influx(measurement, {}, {"x": x, "y": y, "z": z}, influx_timestamp)
+                            write_to_influx(
+                                measurement,
+                                tags,
+                                {"x": x, "y": y, "z": z, "pitch": pitch, "roll": roll, "yaw": yaw},
+                                influx_timestamp
+                            )
                 except (ValueError, KeyError, json.JSONDecodeError) as e:
                     print(f"Error processing acceleration data: {e}")
     except Exception as e:
         print(f"Unhandled exception in on_message: {e}")
-        
+
 # Initialize MQTT client
 mqtt_client = mqtt.Client()
 mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS)
