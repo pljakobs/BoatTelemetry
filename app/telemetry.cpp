@@ -92,9 +92,14 @@ bool TelemetryClient::publish(const char* topic, const JsonDocument& doc) {
 	char fullTopic[TELEMETRY_TOPIC_MAX_SIZE];
     buildTopic(topic, fullTopic, sizeof(fullTopic));
 	String payload;
-	serializeJson(doc, payload);
-    debug_i("Telemetry MQTT publishing %s to topic: %s", payload.c_str(), fullTopic);
-	return mqtt->publish(fullTopic, payload);
+	if (serializeJson(doc, payload)) {
+        debug_i("Telemetry MQTT publishing %s to topic: %s", payload.c_str(), fullTopic);
+        return mqtt->publish(fullTopic, payload);
+    }else{
+		debug_e("Telemetry MQTT failed to serialize JSON document");
+		return false;
+	}
+    
 }
 
 bool TelemetryClient::publish(const String& topic, const JsonDocument& doc) {

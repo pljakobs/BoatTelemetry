@@ -4,21 +4,48 @@
             "locations": {
                 "Salon": {
                     "sensors": {
-                        "antares/3960722352/28ee28d500160298": {
-                            "measurement": "temperature"
-                        },
                         "antares/3960722352/28ee2d1d01160126": {
-                            "measurement": "temperature"
+                            "measurement": "temperature",
+                            "schema": {
+                                "type": "number",
+                                "description": "Temperature reading in Celsius"
+                            }
                         },
                         "antares/3960722352/accel": {
-                            "measurement": "acceleration"
+                            "measurement": "acceleration",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "timestamp": { "type": "number" },
+                                                "x": { "type": "number" },
+                                                "y": { "type": "number" },
+                                                "z": { "type": "number" },
+                                                "pitch": { "type": "number" },
+                                                "roll": { "type": "number" },
+                                                "yaw": { "type": "number" }
+                                            },
+                                            "required": ["timestamp", "x", "y", "z"]
+                                        }
+                                    }
+                                },
+                                "required": ["data"]
+                            }
                         }
                     }
                 },
                 "Motor": {
                     "sensors": {
                         "antares/3960722352/28ee28d500160298": {
-                            "measurement": "temperature"
+                            "measurement": "temperature",
+                            "schema": {
+                                "type": "number",
+                                "description": "Temperature reading in Celsius"
+                            }
                         }
                     }
                 }
@@ -29,7 +56,29 @@
                 "Lab": {
                     "sensors": {
                         "REMOTE_SENSORS/1889783984/accel": {
-                            "measurement": "acceleration"
+                            "measurement": "acceleration",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "timestamp": { "type": "number" },
+                                                "x": { "type": "number" },
+                                                "y": { "type": "number" },
+                                                "z": { "type": "number" },
+                                                "pitch": { "type": "number" },
+                                                "roll": { "type": "number" },
+                                                "yaw": { "type": "number" }
+                                            },
+                                            "required": ["timestamp", "x", "y", "z"]
+                                        }
+                                    }
+                                },
+                                "required": ["data"]
+                            }
                         }
                     }
                 }

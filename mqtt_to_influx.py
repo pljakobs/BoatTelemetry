@@ -38,7 +38,8 @@ for env, env_data in TOPICS_CONFIG["environments"].items():
     for loc, loc_data in env_data["locations"].items():
         for topic, sensor_data in loc_data["sensors"].items():
             TOPICS[topic] = {
-                "measurement": sensor_data["measurement"],
+                "measurement": sensor_data.get("alias", sensor_data["measurement"]),
+                "schema": sensor_data.get("schema"),
                 "tags": {
                     "environment": env,
                     "location": loc
@@ -67,15 +68,18 @@ def write_to_influx(measurement, tags, fields, time=None):
     write_api.write(INFLUXDB_BUCKET, INFLUXDB_ORG, point)
     print(f"Written to InfluxDB: {point}")
 
+# Updated on_connect function to list subscribed topics
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print("Connected to MQTT broker!")
+        print("Subscribing to the following topics:")
         for topic in TOPICS.keys():
             client.subscribe(topic)
-            print(f"Subscribed to topic: {topic}")
+            print(f"  - {topic}")
     else:
         print(f"Failed to connect, return code {rc}")
 
+# Updated on_message function to handle alias for field names
 def on_message(client, userdata, msg):
     try:
         topic = msg.topic
@@ -86,33 +90,60 @@ def on_message(client, userdata, msg):
             topic_config = TOPICS[topic]
             measurement = topic_config["measurement"]
             tags = topic_config["tags"]
+            schema = topic_config.get("schema")
 
-            if measurement == "acceleration":
-                try:
-                    accel_data = json.loads(payload)
-                    if "data" in accel_data and len(accel_data["data"]) > 0:
-                        current_time_ns = int(time.time() * 1e9)
-                        t0 = accel_data["data"][0]["timestamp"]
+            try:
+                if schema:
+                    if schema["type"] == "object":
+                        # Handle JSON-formatted content
+                        payload_data = json.loads(payload)
+                        fields = {}
 
-                        for entry in accel_data["data"]:
-                            relative_time_ns = int((entry["timestamp"] - t0) * 1e9)
-                            influx_timestamp = current_time_ns + relative_time_ns
-
-                            x = float(entry.get("x", 0))
-                            y = float(entry.get("y", 0))
-                            z = float(entry.get("z", 0))
-                            pitch = float(entry.get("pitch", 0))
-                            roll = float(entry.get("roll", 0))
-                            yaw = float(entry.get("yaw", 0))
-
+                        # Check if the "data" field is an array
+                        if "data" in payload_data and isinstance(payload_data["data"], list):
+                            for entry in payload_data["data"]:
+                                # Write each entry in the array as a separate point
+                                entry_fields = {}
+                                for key, value in entry.items():
+                                    field_name = schema.get("properties", {}).get("data", {}).get("items", {}).get("properties", {}).get(key, {}).get("alias", key)
+                                    entry_fields[field_name] = value
+                                write_to_influx(
+                                    measurement,
+                                    tags,
+                                    entry_fields
+                                )
+                        else:
+                            # Handle non-array JSON objects
+                            for key, value in payload_data.items():
+                                field_name = schema.get("properties", {}).get(key, {}).get("alias", key)
+                                fields[field_name] = value
                             write_to_influx(
                                 measurement,
                                 tags,
-                                {"x": x, "y": y, "z": z, "pitch": pitch, "roll": roll, "yaw": yaw},
-                                influx_timestamp
+                                fields
                             )
-                except (ValueError, KeyError, json.JSONDecodeError) as e:
-                    print(f"Error processing acceleration data: {e}")
+                    elif schema["type"] == "value":
+                        # Handle plain values
+                        value = float(payload)
+                        write_to_influx(
+                            measurement,
+                            tags,
+                            {"value": value}
+                        )
+                    elif schema["type"] == "number":
+                        # Handle numeric values
+                        value = float(payload)
+                        write_to_influx(
+                            measurement,
+                            tags,
+                            {"value": value}
+                        )
+                    else:
+                        print(f"Unhandled schema type: {schema['type']}")
+                else:
+                    print(f"No schema defined for topic {topic}")
+            except (ValueError, KeyError, json.JSONDecodeError) as e:
+                print(f"Error processing data for topic {topic}: {e}")
     except Exception as e:
         print(f"Unhandled exception in on_message: {e}")
 

@@ -18,9 +18,9 @@ WIFI_PWD ?= "default_password"
 COMPONENT_SEARCH_DIRS += $(PROJECT_DIR)/Libraries
 LIBRARY_SEARCH_DIRS += $(PROJECT_DIR)/Libraries
 ARDUINO_LIBRARIES := Arduino-Temperature-Control-Library OneWire Adafruit_BusIO Adafruit_Sensor
-ARDUINO_LIBRARIES := Arduino-Temperature-Control-Library OneWire Adafruit_Sensor Adafruit_BusIO Adafruit_MPU6050
+ARDUINO_LIBRARIES := Arduino-Temperature-Control-Library OneWire Adafruit_Sensor Adafruit_BusIO Adafruit_MPU6050 
 #ARDUINO_LIBRARIES := Arduino-Temperature-Control-Library OneWire
-COMPONENT_DEPENDS += LittleFS ArduinoJson6 Network OtaUpgradeMqtt
+COMPONENT_DEPENDS += LittleFS ArduinoJson6 Network OtaUpgradeMqtt 
 COMPONENT_CPPFLAGS += -DCONFIG_ESP_CONSOLE_USB_CDC=1
 #COMPONENT_CPPFLAGS += -I/opt/esp-idf-5.2/components/driver/rmt/include
 DISABLE_NETWORK := 0
@@ -33,3 +33,4 @@ APP_CFLAGS = -DMQTT_URL="\"$(MQTT_URL)\""                \
              -DWIFI_SSID="\"$(WIFI_SSID)\""              \
              -DWIFI_PWD="\"$(WIFI_PWD)\""                \
              -DAPP_ID="\"$(APP_ID)\""
+

@@ -21,6 +21,9 @@
 #include <Wire.h>
 #include <Adafruit_MPU6050.h>
 
+#include <driver/temp_sensor.h>
+
+
 #define ONE_WIRE_BUS 6 // GPIO6 for ESP32-C3
 #define TEMPERATURE_PRECISION 9
 
@@ -93,7 +96,7 @@ void calibrateNormalVector(int samples = 500, int delayMs = 20) {
         }
         delay(delayMs);
     }
-    
+    0
     if (xVals.empty()) return;
     
     normalX_global = std::accumulate(xVals.begin(), xVals.end(), 0.0f) / samples;
@@ -135,6 +138,7 @@ void printData(DeviceAddress deviceAddress)
 
 float calcVariance(const std::vector<float>& buffer) {
     if (buffer.empty()) return 0.0f;
+
     float mean = std::accumulate(buffer.begin(), buffer.end(), 0.0f) / buffer.size();
     float variance = 0.0f;
     for (float val : buffer) {
@@ -144,6 +148,8 @@ float calcVariance(const std::vector<float>& buffer) {
 }
 
 [[ maybe_unused ]] float calcPeriod(const std::vector<float>& zBuffer, float sampleRate) {
+    DynamicJsonDocument doc(8192); // Adjust size as needed
+    JsonArray dataArray = doc.createNestedArray("data");
     if (zBuffer.size() < 3) return 0.0f;
     std::vector<size_t> peaks;
     float minPeakHeight = 0.05f;  // Minimum peak height (tune as needed)
@@ -154,12 +160,50 @@ float calcVariance(const std::vector<float>& buffer) {
     }
     if (peaks.size() < 2) return 0.0f;
     // Calculate average period between peaks
+    for (const auto& point : accelBuffer) {
+        JsonObject obj = dataArray.createNestedObject();
+        obj["timestamp"] = point[0];  // Add timestamp
+        obj["x"] = point[1];
+        obj["y"] = point[2];
+        obj["z"] = point[3];
+        obj["pitch"] = point[4];
+        obj["roll"] = point[5];
+        obj["yaw"] = point[6];
+    }
+
     float totalPeriod = 0.0f;
     for (size_t i = 1; i < peaks.size(); ++i) {
         totalPeriod += (peaks[i] - peaks[i-1]);
     }
     float avgSamples = totalPeriod / (peaks.size() - 1);
     return avgSamples / sampleRate;
+}
+
+float readInternalTemperature() {
+    float temperature = 0.0;
+
+    // Initialize the temperature sensor
+    temp_sensor_config_t temp_sensor = TSENS_CONFIG_DEFAULT();
+    
+    //temp_sensor_get_config(&temp_sensor);
+    temp_sensor.dac_offset = TSENS_DAC_L2;
+    temp_sensor_set_config(temp_sensor);
+    temp_sensor_start();
+
+    // Wait for the sensor to stabilize
+    delay(100);
+
+    // Read the temperature
+    esp_err_t e=temp_sensor_read_celsius(&temperature);
+
+    if(e != ESP_OK) {
+        Serial.printf("Error reading temperature: %d\n", e);
+    }
+    // Stop the temperature sensor
+    temp_sensor_stop();
+
+    // Print the temperature
+    return temperature;
 }
 
 // Replace ADXL345 initialization with MPU6050 initialization
@@ -210,7 +254,7 @@ void readDataMPU6050() {
 
     // Every second (50 samples at 20ms), publish to MQTT
     if (sampleCounter >= 50) {
-        StaticJsonDocument<4096> doc;  // Adjust size as needed
+        DynamicJsonDocument doc(8192);   // Adjust size as needed
         JsonArray dataArray = doc.createNestedArray("data");
 
         for (const auto& point : accelBuffer) {
@@ -224,10 +268,21 @@ void readDataMPU6050() {
             obj["yaw"] = point[6];
         }
 
-        telemetryClient->publish("accel", doc);
+           // Check memory usage
+        Serial.print("Memory used: ");
+        Serial.print(doc.memoryUsage());
+        Serial.println(" bytes");
+        
+        // Check capacity
+        Serial.print("Document capacity: ");
+        Serial.print(doc.capacity());
+        Serial.println(" bytes");
 
+        telemetryClient->publish("accel", doc);
+        Serial.printf("=========================\ndone publishing ReadData mpu6050\n");
         // Clear buffer
         accelBuffer.clear();
+        Serial.printf("cleared accelBuffer\n");
         sampleCounter = 0;
     }
 }
@@ -259,12 +314,14 @@ void readData()
                     sensorIdStr += String(addr[j], HEX);
                 }
                 telemetryClient->publish(sensorIdStr,String(tempC,2));
-                String logMsg = "Sensor " + String(i+1) + ": " + String(tempC, 2) + "°C";
-                telemetryClient->log(logMsg);
+                //String logMsg = "Sensor " + String(i+1) + ": " + String(tempC, 2) + "°C";
+                //telemetryClient->log(logMsg);
             }
         } else {
             Serial.printf("Unable to find address for Device %d\n", i);
         }
+        telemetryClient->publish("cpuTemp",String(readInternalTemperature(),2));
+        Serial.printf("\n=========================\ndone publishing ReadData\n");
     }
 }
 
@@ -285,6 +342,14 @@ void init() {
     const char* mqttUser = MQTT_USER;
     const char* mqttPass = MQTT_PASS;
 
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = 240,
+        .min_freq_mhz = 80,
+        .light_sleep_enable = true
+    };
+    esp_pm_configure(&pm_config);
+
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
     Serial.printf("Initializing WiFi...\n\tSSID: %s\n\tPassword: %s", wifiSSID, wifiPassword);
     WifiStation.enable(true);
     WifiStation.config(wifiSSID, wifiPassword);
@@ -300,6 +365,9 @@ void init() {
 
         // Initialize MPU6050
         setupMPU6050();
+
+        // Initialize DS18B20 Temperature Sensors
+        sensors.begin();
 
         // Start timers
         procTimer.initializeMs<10000>(readData).start();
